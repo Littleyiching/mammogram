@@ -8,6 +8,7 @@ import re
 
 import pandas as pd
 import torch
+local_directory = os.getcwd()
 # please do not modify this!
 seed = 89802024
 
@@ -22,7 +23,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device}")
 
 def Import_FullMammo():
-    dir_path='/xtra/ho000199'
+    dir_path='{}/..'.format(local_directory)
     dicom_info = pd.read_csv(f'{dir_path}/CBIS-DDSM/csv/dicom_info.csv')
     mass_train = pd.read_csv(f'{dir_path}/CBIS-DDSM/csv/mass_case_description_train_set.csv')
     mass_test = pd.read_csv(f'{dir_path}/CBIS-DDSM/csv/mass_case_description_test_set.csv')
@@ -49,7 +50,7 @@ def Import_FullMammo():
     return trainset, testset
 
 def Import_CropImg():
-    dir_path='/xtra/ho000199'
+    dir_path='{}/..'.format(local_directory)
     dicom_info = pd.read_csv(f'{dir_path}/CBIS-DDSM/csv/dicom_info.csv')
     mass_train = pd.read_csv(f'{dir_path}/CBIS-DDSM/csv/mass_case_description_train_set.csv')
     mass_test = pd.read_csv(f'{dir_path}/CBIS-DDSM/csv/mass_case_description_test_set.csv')

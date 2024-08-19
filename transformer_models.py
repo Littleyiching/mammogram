@@ -22,19 +22,36 @@ train_loss_list = []
 valid_loss_list = []
 train_acc_list = []
 valid_acc_list = []
-dir_path="/xtra/ho000199/temp"
-method = ['convnext_tiny']
+dir_path="{}/../pth"
+method = ['vits14_lc', 'vits14']
 #convnext_s = models.convnext_small()
-convnext_t = models.convnext_tiny()
+dinov2_vits14_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_lc')
+in_features = dinov2_vits14_lc.linear_head.in_features
+dinov2_vits14_lc.linear_head = nn.Linear(in_features, 2)
+class DinoVisionTransformerClassifier(nn.Module):
+    def __init__(self):
+        super(DinoVisionTransformerClassifier, self).__init__()
+        self.transformer = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+        self.classifier = nn.Sequential(
+            nn.Linear(384, 256),
+            nn.ReLU(),
+            nn.Linear(256, 2)
+        )
+
+    def forward(self, x):
+        x = self.transformer(x)
+        x = self.transformer.norm(x)
+        x = self.classifier(x)
+        return x
+dinov2_vits14 = DinoVisionTransformerClassifier()
 #convnext_b = models.convnext_base(weights=models.ConvNeXt_Base_Weights.DEFAULT)
 #vgg16 = models.vgg16()
 #convnext_s.load_state_dict(torch.load("/xtra/ho000199/temp/pth/pretrained/convnext_small-0c510722.pth"))
-convnext_t.load_state_dict(torch.load("/xtra/ho000199/temp/pth/pretrained/convnext_tiny-983f1562.pth"))
 #vgg16.load_state_dict(torch.load("/xtra/ho000199/temp/pth/pretrained/vgg16-397923af.pth"))
-model_list = [convnext_t]
+model_list = [dinov2_vits14_lc, dinov2_vits14]
 
 assert len(method) == len(model_list)
-train_loader, valid_loader, test_loader = Load_data(trainset, testset, aug='imgnet')
+train_loader, valid_loader, test_loader = Load_data(trainset, testset, m='imgnet')
 for i, model in enumerate(model_list):
     if re.search("ViT", method[i])!=None:
         # Get the number of input features to the final classification layer
@@ -60,6 +77,8 @@ for i, model in enumerate(model_list):
     elif re.search("vgg", method[i])!=None:
         num_ftrs=model.classifier[6].in_features
         model.classifier[6]=nn.Linear(num_ftrs, 2)
+    elif re.search("vits", method[i])!=None:
+        print("dinov2!")
     else:
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(num_ftrs, num_classes)
@@ -71,7 +90,7 @@ for i, model in enumerate(model_list):
     scheduler = optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.01, steps_per_epoch=len(train_loader), epochs=100)
     scheduler_name = scheduler.__class__.__name__
     
-    training_losses, validation_losses, training_acc, validation_acc = train_model(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, f'{method[i]}', 100)
+    training_losses, validation_losses, training_acc, validation_acc = train_model(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, f'{method[i]}', 1)
     true_labels, predicted_probabilities = test_model(model, test_loader, f"{dir_path}/{method[i]}_best.pth", scheduler_name, device)
     result = pd.DataFrame({'training loss': training_losses,
                         'validation loss': validation_losses,

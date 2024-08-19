@@ -7,8 +7,11 @@ from PIL import Image
 import os
 import torch
 from sklearn.metrics import roc_curve, auc
+from dinov2_model import ResizeAndPad
+from dataprocess import local_directory
 
-dir_path='/xtra/ho000199'
+dir_path="{}/..".format(local_directory)
+pth_path="{}/../pth".format(local_directory)
 class MyDataset(Dataset):
     def __init__(self, dataset, transform=None):
         self.data = dataset
@@ -25,25 +28,6 @@ class MyDataset(Dataset):
         if self.transform:
             image = self.transform(image)
         return image, label
-
-# These are settings for ensuring input images to DinoV2 are properly sized
-class ResizeAndPad:
-    def __init__(self, target_size, multiple):
-        self.target_size = target_size
-        self.multiple = multiple
-
-    def __call__(self, img):
-        # Resize the image
-        img = transforms.Resize(self.target_size)(img)
-
-        # Calculate padding
-        pad_width = (self.multiple - img.width % self.multiple) % self.multiple
-        pad_height = (self.multiple - img.height % self.multiple) % self.multiple
-
-        # Apply padding
-        img = transforms.Pad((pad_width // 2, pad_height // 2, pad_width - pad_width // 2, pad_height - pad_height // 2))(img)
-
-        return img
 
 def data_transformation_imgnet():
     target_size = (256, 256)
@@ -311,7 +295,7 @@ def train_model(model, loss_module, optimizer, scheduler, train_loader, valid_lo
         # Save the best model
         if valid_acc > best_acc:
             best_acc = valid_acc
-            torch.save(model.state_dict(), f'{dir_path}/temp/{path}_best.pth')
+            torch.save(model.state_dict(), f'{pth_path}/{path}_best.pth')
             print(f'Best Epoch {epoch+1}')
 
         training_losses.append(train_loss)
@@ -319,7 +303,7 @@ def train_model(model, loss_module, optimizer, scheduler, train_loader, valid_lo
         validation_acc.append(valid_acc)
         training_acc.append(train_acc)
     # Save the last state of training process
-    torch.save(model.state_dict(), f'{dir_path}/temp/{path}_epoch_{epoch + 1}.pth')
+    torch.save(model.state_dict(), f'{pth_path}/{path}_epoch_{epoch + 1}.pth')
 
     return training_losses, validation_losses, training_acc, validation_acc
 

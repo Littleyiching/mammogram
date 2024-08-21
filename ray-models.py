@@ -23,7 +23,9 @@ from torch import nn, optim
 #warnings.filterwarnings('ignore', category=UserWarning)
 from dataprocess import device, local_directory, Import_CropImg
 from DLprocessing import split_data
-from dinov2_model import DinoVisionTransformerClassifier
+from torchvision import models
+from MedViT import MedViT_large
+
 import os
 
 # please do not modify this!
@@ -38,11 +40,10 @@ torch.backends.cudnn.benchmark = False
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device}")
+from PIL import Image
+import cv2
 
 from torch.utils.data import Dataset, DataLoader
-import cv2
-from PIL import Image
-
 class Dataset_CLAHE(Dataset):
     def __init__(self, dataset, clipLimit=0.01, tileGridSize=8, transform=None):
         self.data = dataset
@@ -68,31 +69,12 @@ class Dataset_CLAHE(Dataset):
             image = self.transform(image)
         return image, label
     
-# These are settings for ensuring input images to DinoV2 are properly sized
-class ResizeAndPad:
-    def __init__(self, target_size, multiple):
-        self.target_size = target_size
-        self.multiple = multiple
-
-    def __call__(self, img):
-        # Resize the image
-        img = transforms.Resize(self.target_size)(img)
-
-        # Calculate padding
-        pad_width = (self.multiple - img.width % self.multiple) % self.multiple
-        pad_height = (self.multiple - img.height % self.multiple) % self.multiple
-
-        # Apply padding
-        img = transforms.Pad((pad_width // 2, pad_height // 2, pad_width - pad_width // 2, pad_height - pad_height // 2))(img)
-
-        return img
-    
 def data_transformation_aug():
     target_size = (224, 224)
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
-            ResizeAndPad(target_size, 14),
+            transforms.Resize(target_size),  # Resize images to target size
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
             transforms.RandomRotation(degrees=180),
@@ -115,7 +97,7 @@ def data_transformation_imgnet():
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
-            ResizeAndPad(target_size, 14),
+            transforms.Resize(target_size),  # Resize images to target size
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=180),
             transforms.ToTensor(),           # Convert images to tensors
@@ -140,21 +122,62 @@ def Load_alldata(config):
         data_transforms = data_transformation_aug()
     else:
         data_transforms = data_transformation_imgnet()
+    
     train_dataset = Dataset_CLAHE(trainset, clipLimit=config["cl"], tileGridSize=config["grid"], transform=data_transforms['train'])
     valid_dataset = Dataset_CLAHE(validset, transform=data_transforms['val'])
     test_dataset = Dataset_CLAHE(testset, transform=data_transforms['val'])
     return train_dataset, valid_dataset, test_dataset
 
-
+def model_layers(config, num_classes=2):
+    if config["version"] == "efficientnetv2":
+        model = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
+        num_ftrs = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(num_ftrs, num_classes)
+    elif config["version"] == "shufflenet":
+        model = models.shufflenet_v2_x1_0(weights=models.ShuffleNet_V2_X1_0_Weights.DEFAULT)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
+    elif config["version"]=="swin_v2_s":
+        model = models.swin_v2_s(weights=models.Swin_V2_S_Weights.DEFAULT)
+        num_ftrs = model.head.in_features
+        model.head = nn.Linear(num_ftrs, num_classes)
+    elif config["version"] == "maxvit":
+        model = models.maxvit_t(weights=models.MaxVit_T_Weights.DEFAULT)
+        num_ftrs=model.classifier[5].in_features
+        model.classifier[5] = nn.Linear(num_ftrs, num_classes)
+    elif config["version"] == "resnet50":
+        model=models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
+    elif config["version"] == "convnext":
+        model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
+        num_ftrs=model.classifier[2].in_features
+        model.classifier[2]=nn.Linear(num_ftrs, num_classes)
+    elif config["version"] == "resnext50_32x4d":
+        model = models.resnext50_32x4d(weights=models.ResNext50_32X4D_Weights.DEFAULT)
+        num_ftrs=model.classifier[2].in_features
+        model.classifier[2]=nn.Linear(num_ftrs, num_classes)
+    elif config["version"] == "medvit":
+        model = MedViT_large(pretrained=True, num_classes = 1000)
+        num_ftrs=model.proj_head[0].in_features
+        model.proj_head[0]=nn.Linear(num_ftrs, 2)
+    else:
+        model=models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT)
+        num_ftrs = model.heads.head.in_features
+        model.heads.head = nn.Linear(num_ftrs, num_classes)
+    print(model)
+    return model
+    
 def train_func(config):
 
     num_epoch=50
-    batch_size=16
-    if config["version"] == "small":
-        model = DinoVisionTransformerClassifier("small")
-    elif config["version"] == "base":
-        model = DinoVisionTransformerClassifier("base")
+    num_classes=2
+    batch_size=64
 
+    #model = model_layers(config, num_classes=num_classes)
+    model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
+    num_ftrs=model.classifier[2].in_features
+    model.classifier[2]=nn.Linear(num_ftrs, num_classes)
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda:0"
@@ -164,7 +187,8 @@ def train_func(config):
 
     criterion = nn.CrossEntropyLoss()
     
-    optimizer = optim.Adam(model.parameters(), lr=5e-6)
+
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
     # Load existing checkpoint through `get_checkpoint()` API.
     if train.get_checkpoint():
         loaded_checkpoint = train.get_checkpoint()
@@ -246,7 +270,10 @@ def train_func(config):
 
 def test_best_model(best_result):
 
-    best_trained_model = DinoVisionTransformerClassifier("small")
+    num_classes=2
+    best_trained_model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
+    num_ftrs=best_trained_model.classifier[2].in_features
+    best_trained_model.classifier[2]=nn.Linear(num_ftrs, num_classes)
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     best_trained_model.to(device)
 
@@ -277,10 +304,9 @@ def test_best_model(best_result):
 
 def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
     config = {
-    "version": tune.choice(["small", "base"]),
+    "aug": tune.choice([True, False]),
     "grid": tune.choice([3, 5, 8]),
     "cl": tune.choice([0.01, 0.05, 1, 2]),
-    "aug": tune.choice([True, False]),
     }
     # Define the directory where results will be saved
 
@@ -307,7 +333,7 @@ def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
         ),
         param_space=config,
         run_config=RunConfig(
-        name="dino_clahe",
+        name="convt_clahe",
         checkpoint_config=CheckpointConfig(
         num_to_keep=2,
         # *Best* checkpoints are determined by these params:
@@ -330,4 +356,4 @@ def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
 
     test_best_model(best_result)
 
-main(num_samples=30, max_num_epochs=50, gpus_per_trial=1)
+main(num_samples=30, max_num_epochs=30, gpus_per_trial=1)

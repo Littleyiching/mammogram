@@ -30,7 +30,7 @@ class MyDataset(Dataset):
         return image, label
 
 def data_transformation_imgnet():
-    target_size = (256, 256)
+    target_size = (224, 224)
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
@@ -52,7 +52,7 @@ def data_transformation_imgnet():
     return data_transforms
 
 def data_transformation_padding():
-    target_size = (256, 256)
+    target_size = (224, 224)
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
@@ -74,7 +74,7 @@ def data_transformation_padding():
     return data_transforms
 
 def data_transformation():
-    target_size = (256, 256)
+    target_size = (224, 224)
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
@@ -92,16 +92,13 @@ def data_transformation():
     return data_transforms
 
 def data_augmentation():
-    target_size = (256, 256)
+    target_size = (224, 224)
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
             transforms.Resize(target_size),
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=30),
-            transforms.RandomResizedCrop(size=target_size, scale=(0.75, 1.25)),
-            #transforms.RandomApply([transforms.RandomResizedCrop(size=target_size, scale=(0.75, 1.25))], p=0.5),
-            #transforms.RandomApply([transforms.ColorJitter(brightness=0.2, contrast=0.2)], p=0.5),
+            transforms.AugMix(),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                              std=[0.229, 0.224, 0.225])
@@ -113,69 +110,26 @@ def data_augmentation():
                                              std=[0.229, 0.224, 0.225])
         ]),
     }
-    print("=========rotate 30, scale:0.75-1.25")
+    print("=========Apply autmix")
     return data_transforms
 
-def data_augmentation_contrast():
-    target_size = (256, 256)
-    # Define data transformations
-    data_transforms = {
-        'train': transforms.Compose([
-            transforms.Resize(target_size),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=180),
-            #transforms.RandomResizedCrop(size=target_size, scale=(0.75, 1.25)),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                             std=[0.229, 0.224, 0.225])
-        ]),
-        'val': transforms.Compose([
-            transforms.Resize(target_size),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                             std=[0.229, 0.224, 0.225])
-        ]),
-    }
-    print("=========data_augmentation/w contrast")
-    return data_transforms
-
-def split_data(trainset):
+def split_data(trainset, test_size=0.2):
     # Split the dataset into training and validation sets
-    trainset, validset = train_test_split(trainset, test_size=0.2)
+    trainset, validset = train_test_split(trainset, test_size=test_size)
     trainset=trainset.reset_index()
     validset=validset.reset_index()
     return trainset, validset
 
-def Load_augdata(trainset, validset, testset, aug):
-    batch_size=32    
-    if aug == 'imgnet':
-        data_transforms = data_transformation_imgnet()
-    elif aug == 'aug':
-        data_transforms = data_augmentation()
-    else:
-        data_transforms = data_augmentation_contrast()
-
-    train_dataset = MyDataset(trainset, transform=data_transforms['train'])
-    valid_dataset = MyDataset(validset, transform=data_transforms['val'])
-    test_dataset = MyDataset(testset, transform=data_transforms['val'])
-
-    # Create DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    return train_loader, valid_loader, test_loader
-
-def Load_data(trainset, testset, m):
+def Load_data(trainset, testset, test_size=0.2, m='imgnet'):
     batch_size=32
-    trainset, validset = split_data(trainset)
+    trainset, validset = split_data(trainset, test_size=test_size)
     
     if m == 'imgnet':
         data_transforms = data_transformation_imgnet()
     elif m == 'padding':
         data_transforms = data_transformation_padding()
     else:
-        data_transforms = data_transformation()
+        data_transforms = data_augmentation()
 
     train_dataset = MyDataset(trainset, transform=data_transforms['train'])
     valid_dataset = MyDataset(validset, transform=data_transforms['val'])

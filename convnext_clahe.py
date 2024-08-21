@@ -12,7 +12,7 @@ from torch import nn, optim
 #warnings.filterwarnings('ignore', category=UserWarning)
 from dataprocess import device, Import_CropImg, local_directory
 from DLprocessing import train_model, plot_learning_curves, plot_accuracy, test_model, Load_data
-from dinov2_model import DinoVisionTransformerClassifier
+from torchvision import models
 from cvprocessing import Load_CLAHE_data
 
 import os
@@ -37,24 +37,26 @@ loss_module=nn.CrossEntropyLoss()
 method = ["clahe", "none"]
 for m, name in enumerate(method):
     for i in range(5):
-        model = DinoVisionTransformerClassifier("base")
+        model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
+        num_ftrs=model.classifier[2].in_features
+        model.classifier[2]=nn.Linear(num_ftrs, num_classes)
         model = model.to(device)
         print(model)
         if name == "clahe":
-            train_loader, valid_loader, test_loader = Load_CLAHE_data(trainset, testset, m='padding')
+            train_loader, valid_loader, test_loader = Load_CLAHE_data(trainset, testset)
         else:
-            train_loader, valid_loader, test_loader = Load_data(trainset, testset, m='padding')
-        optimizer = optim.Adam(model.parameters(), lr=5e-6)
+            train_loader, valid_loader, test_loader = Load_data(trainset, testset)
+        optimizer = optim.Adam(model.parameters(), lr=1e-4)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, min_lr=1e-6)
         scheduler_name = scheduler.__class__.__name__
 
-        training_losses, validation_losses, training_acc, validation_acc = train_model(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, f'dino_{name}_{i}', 40)
-        true_labels, predicted_probabilities = test_model(model, test_loader, f"{dir_path}/dino_{name}_{i}_best.pth", scheduler_name, device)
+        training_losses, validation_losses, training_acc, validation_acc = train_model(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, f'convt_{name}_{i}', 40)
+        true_labels, predicted_probabilities = test_model(model, test_loader, f"{dir_path}/convt_{name}_{i}_best.pth", scheduler_name, device)
         result = pd.DataFrame({'training loss': training_losses,
                             'validation loss': validation_losses,
                             'training accuracy': training_acc,
                             'validation accuracy': validation_acc})
-        result.to_csv(f'dino_{name}_{i}.csv', index=False) 
+        result.to_csv(f'convt_{name}_{i}.csv', index=False) 
         train_loss_list.append(training_losses)
         valid_loss_list.append(validation_losses)
         train_acc_list.append(training_acc)
@@ -69,4 +71,4 @@ for m, name in enumerate(method):
                         'validation loss': valid_avg,
                         'training accuracy': trainacc_avg,
                         'validation accuracy': validacc_avg})
-    avg_result.to_csv(f'dino_{name}_avg.csv', index=False) 
+    avg_result.to_csv(f'convt_{name}_avg.csv', index=False) 

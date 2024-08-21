@@ -55,7 +55,16 @@ class DinoVisionTransformerClassifier(nn.Module):
         # - base:  https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_pretrain.pth
         # - large: https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_pretrain.pth
         # - giant: https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_reg4_pretrain.pth
-        model.load_state_dict(torch.load('{}/../pth/dinov2_vits14_reg4_pretrain.pth'.format(local_directory)))
+        if model_size == "small":
+            print("====loading small")
+            model.load_state_dict(torch.load('{}/../pth/pretrained/dinov2_vits14_reg4_pretrain.pth'.format(local_directory)))
+        elif model_size == "base":
+            print("====loading base")
+            model.load_state_dict(torch.load('{}/../pth/pretrained/dinov2_vitb14_reg4_pretrain.pth'.format(local_directory)))
+        elif model_size == "large":
+            print("====loading large")
+            model.load_state_dict(torch.load('{}/../pth/pretrained/dinov2_vitl14_reg4_pretrain.pth'.format(local_directory)))
+
 
         self.transformer = deepcopy(model)
 

@@ -8,7 +8,7 @@ import os
 import torch
 from sklearn.metrics import roc_curve, auc
 from dinov2_model import ResizeAndPad
-from dataprocess import local_directory
+from dataprocess import local_directory, save_metrics
 
 dir_path="{}/..".format(local_directory)
 pth_path="{}/../pth".format(local_directory)
@@ -98,6 +98,8 @@ def data_augmentation():
         'train': transforms.Compose([
             transforms.Resize(target_size),
             transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomVerticalFlip(p=0.5),
+            transforms.RandomRotation(degrees=180),
             transforms.AugMix(),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -110,7 +112,7 @@ def data_augmentation():
                                              std=[0.229, 0.224, 0.225])
         ]),
     }
-    print("=========Apply autmix")
+    print("=========Apply autmix, rotate, flip")
     return data_transforms
 
 def split_data(trainset, test_size=0.2):
@@ -257,6 +259,117 @@ def train_model(model, loss_module, optimizer, scheduler, train_loader, valid_lo
         validation_acc.append(valid_acc)
         training_acc.append(train_acc)
     # Save the last state of training process
+    torch.save(model.state_dict(), f'{pth_path}/{path}_epoch_{epoch + 1}.pth')
+
+    return training_losses, validation_losses, training_acc, validation_acc
+
+def train_and_save_metrics(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, path='model', epochs=20):
+
+    training_losses = []
+    validation_losses = []
+    training_acc = []
+    validation_acc = []
+    best_acc = 0
+
+    for epoch in range(epochs):
+
+        # Set model to train mode
+        model.train()
+
+        running_loss = 0.0
+        progress_bar = tqdm(train_loader, desc=f"Training epoch {epoch + 1}/{epochs}", leave=False, unit='mini-batch')
+
+        # Batch loop
+        total = 0
+        correct = 0
+        total_pred = []
+        total_labels= []
+        imagepath_list = []
+        for inputs, labels, image_path in progress_bar:
+
+            # Move input data to device (only strictly necessary if we use GPU)
+            #inputs, labels = inputs.cuda(), labels.cuda()
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            # Before calculating the gradients, we need to ensure that they are all zero.
+            # The gradients would not be overwritten, but actually added to the existing ones.
+            optimizer.zero_grad()
+
+            # Run the model on the input data and compute the outputs
+            outputs = model(inputs)
+
+            # Calculate the loss
+            loss = loss_module(outputs, labels)
+
+            # Perform backpropagation
+            loss.backward()
+
+            # Update the parameters
+            optimizer.step()
+
+            # Calculate the loss for current iteration
+            running_loss += loss.item()
+
+            progress_bar.set_postfix(loss=loss.item())
+            _, preds = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (preds == labels).sum().item()
+            total_pred.extend(preds.cpu().numpy())
+            total_labels.extend(labels.cpu().numpy())
+            imagepath_list.extend(list(image_path))
+
+        train_loss = running_loss / len(train_loader)
+        train_acc = correct / total
+        if epoch > 30:
+            print("====start saving training")
+            idx = epoch -30
+            save_metrics(total_pred, total_labels, imagepath_list, idx, f'{path}_Train')
+
+        model.eval()
+        running_loss = 0.0
+        total = 0
+        correct = 0
+        total_pred = []
+        total_labels= []
+        imagepath_list = []
+        with torch.no_grad():
+
+            for inputs, labels, image_path in valid_loader:
+
+                # For validation batches, calculate the output, and loss in a similar way
+                inputs, labels = inputs.to(device), labels.to(device)
+                #inputs, labels = input.cuda(), labels.cuda()
+                outputs = model(inputs)
+                loss = loss_module(outputs, labels)
+                running_loss += loss.item()
+                _, preds = torch.max(outputs, 1)
+                total += labels.size(0)
+                correct += (preds == labels).sum().item()
+                total_pred.extend(preds.cpu().numpy())
+                total_labels.extend(labels.cpu().numpy())
+                imagepath_list.extend(list(image_path))
+        valid_loss = running_loss / len(valid_loader)
+        valid_acc = correct / total
+        scheduler.step(valid_loss)
+
+        print(f'Epoch {epoch+1}/{epochs}, Train Loss: {train_loss:.4f},  Valid Loss: {valid_loss:.4f}, Train acc: {train_acc:.4f}, Valid acc: {valid_acc:.4f}')
+        print(f'LR: {optimizer.param_groups[0]["lr"]:.8f}')
+        if epoch >30: 
+            print("====start saving validation")
+            idx = epoch -30
+            save_metrics(total_pred, total_labels, imagepath_list, idx, f'{path}_Val')
+
+        # Save the best model
+        if valid_acc > best_acc:
+            best_acc = valid_acc
+            torch.save(model.state_dict(), f'{pth_path}/{path}_best.pth')
+            print(f'Best Epoch {epoch+1}')
+
+        training_losses.append(train_loss)
+        validation_losses.append(valid_loss)
+        validation_acc.append(valid_acc)
+        training_acc.append(train_acc)
+
     torch.save(model.state_dict(), f'{pth_path}/{path}_epoch_{epoch + 1}.pth')
 
     return training_losses, validation_losses, training_acc, validation_acc
@@ -446,3 +559,4 @@ def plot_decoderimg(model, test_loader, device, name):
         ax[0, i].axis('OFF')
         ax[1, i].axis('OFF')
     plt.savefig(f'{name}-decode.png')
+

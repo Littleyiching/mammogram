@@ -85,3 +85,29 @@ def Import_CropImg():
     print("Total malignant cases for training")
     print(len(trainset[(trainset['pathology']=='MALIGNANT')]))
     return trainset, testset
+
+# Validation function to identify and plot false positives and false negatives
+def save_metrics(preds, labels, image_path, idx, name):
+    false_positives = []
+    false_negatives = []
+    true_positives = []
+    true_negatives = []
+    assert len(preds) == len(labels) == len(image_path)
+    for i in range(len(labels)):
+        if preds[i] == 1 and labels[i] == 0:
+            false_positives.append(image_path[i])
+        elif preds[i] == 0 and labels[i] == 1:
+            false_negatives.append(image_path[i])
+        elif preds[i] == 1 and labels[i] == 1:
+            true_positives.append(image_path[i])
+        else:
+            true_negatives.append(image_path[i])
+    data = {'false positive': false_positives,
+                'false negative': false_negatives,
+                'true positive': true_positives,
+                'true negative': true_negatives}
+    result = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in data.items()]))
+    if idx == 0:
+      result.to_csv(f'metrics-{name}.csv', index=False)
+    else:
+      result.to_csv(f'metrics-{name}.csv', mode='a', header=False, index=False)

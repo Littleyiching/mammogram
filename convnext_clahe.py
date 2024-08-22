@@ -11,9 +11,9 @@ from torch import nn, optim
 #import warnings
 #warnings.filterwarnings('ignore', category=UserWarning)
 from dataprocess import device, Import_CropImg, local_directory
-from DLprocessing import train_model, plot_learning_curves, plot_accuracy, test_model, Load_data
+from DLprocessing import train_and_save_metrics, plot_learning_curves, plot_accuracy, test_model, Load_data
 from torchvision import models
-from cvprocessing import Load_CLAHE_data
+from cvprocessing import Load_data_with_path
 
 import os
 import pandas as pd
@@ -35,40 +35,36 @@ dir_path="{}/../pth".format(local_directory)
 
 loss_module=nn.CrossEntropyLoss()
 method = ["clahe", "none"]
-for m, name in enumerate(method):
-    for i in range(5):
-        model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
-        num_ftrs=model.classifier[2].in_features
-        model.classifier[2]=nn.Linear(num_ftrs, num_classes)
-        model = model.to(device)
-        print(model)
-        if name == "clahe":
-            train_loader, valid_loader, test_loader = Load_CLAHE_data(trainset, testset)
-        else:
-            train_loader, valid_loader, test_loader = Load_data(trainset, testset)
-        optimizer = optim.Adam(model.parameters(), lr=1e-4)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, min_lr=1e-6)
-        scheduler_name = scheduler.__class__.__name__
+for i in range(3):
+    model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
+    num_ftrs=model.classifier[2].in_features
+    model.classifier[2]=nn.Linear(num_ftrs, num_classes)
+    model = model.to(device)
+    print(model)
+    train_loader, valid_loader, test_loader = Load_data_with_path(trainset, testset, m='aug')
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, min_lr=1e-6)
+    scheduler_name = scheduler.__class__.__name__
 
-        training_losses, validation_losses, training_acc, validation_acc = train_model(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, f'convt_{name}_{i}', 40)
-        true_labels, predicted_probabilities = test_model(model, test_loader, f"{dir_path}/convt_{name}_{i}_best.pth", scheduler_name, device)
-        result = pd.DataFrame({'training loss': training_losses,
-                            'validation loss': validation_losses,
-                            'training accuracy': training_acc,
-                            'validation accuracy': validation_acc})
-        result.to_csv(f'convt_{name}_{i}.csv', index=False) 
-        train_loss_list.append(training_losses)
-        valid_loss_list.append(validation_losses)
-        train_acc_list.append(training_acc)
-        valid_acc_list.append(validation_acc)
-        
-    train_avg = [sum(x) / len(x) for x in zip(*train_loss_list)]
-    valid_avg = [sum(x) / len(x) for x in zip(*valid_loss_list)]
-    trainacc_avg = [sum(x) / len(x) for x in zip(*train_acc_list)]
-    validacc_avg = [sum(x) / len(x) for x in zip(*valid_acc_list)]
-    print(f"train loss avg:{train_avg}, val loss avg:{valid_avg}, train acc avg:{trainacc_avg}, val acc avg:{validacc_avg}")
-    avg_result = pd.DataFrame({'training loss': train_avg,
-                        'validation loss': valid_avg,
-                        'training accuracy': trainacc_avg,
-                        'validation accuracy': validacc_avg})
-    avg_result.to_csv(f'convt_{name}_avg.csv', index=False) 
+    training_losses, validation_losses, training_acc, validation_acc = train_and_save_metrics(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, f'convt_{i}', 40)
+    true_labels, predicted_probabilities = test_model(model, test_loader, f"{dir_path}/convt_{i}_best.pth", scheduler_name, device)
+    result = pd.DataFrame({'training loss': training_losses,
+                        'validation loss': validation_losses,
+                        'training accuracy': training_acc,
+                        'validation accuracy': validation_acc})
+    result.to_csv(f'convt_{i}.csv', index=False) 
+    train_loss_list.append(training_losses)
+    valid_loss_list.append(validation_losses)
+    train_acc_list.append(training_acc)
+    valid_acc_list.append(validation_acc)
+    
+train_avg = [sum(x) / len(x) for x in zip(*train_loss_list)]
+valid_avg = [sum(x) / len(x) for x in zip(*valid_loss_list)]
+trainacc_avg = [sum(x) / len(x) for x in zip(*train_acc_list)]
+validacc_avg = [sum(x) / len(x) for x in zip(*valid_acc_list)]
+print(f"train loss avg:{train_avg}, val loss avg:{valid_avg}, train acc avg:{trainacc_avg}, val acc avg:{validacc_avg}")
+avg_result = pd.DataFrame({'training loss': train_avg,
+                    'validation loss': valid_avg,
+                    'training accuracy': trainacc_avg,
+                    'validation accuracy': validacc_avg})
+avg_result.to_csv(f'convt_avg.csv', index=False) 

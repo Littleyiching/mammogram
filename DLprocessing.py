@@ -42,6 +42,92 @@ class PatchDataset(Dataset):
         bag = torch.stack(patches)
         label = self.data.label[index]
         return bag, label
+    
+class CustomImageDataset(Dataset):
+    def __init__(self, root_dir, transform=None):
+        """
+        Args:
+            root_dir (str): Directory with all the images organized in subdirectories by class.
+            transform (callable, optional): Optional transform to be applied on a sample.
+        """
+        self.root_dir = root_dir
+        self.transform = transform
+        
+        # Create a list of (image_path, label) tuples
+        self.image_paths = []
+        self.labels = []
+        
+        # Loop through each class subdirectory
+        for label, class_name in enumerate(os.listdir(root_dir)):
+            class_dir = os.path.join(root_dir, class_name)
+            if os.path.isdir(class_dir):
+                for img_name in os.listdir(class_dir):
+                    img_path = os.path.join(class_dir, img_name)
+                    self.image_paths.append(img_path)
+                    self.labels.append(label)
+    
+    def __len__(self):
+        return len(self.image_paths)
+    
+    def __getitem__(self, idx):
+        img_path = self.image_paths[idx]
+        image = Image.open(img_path).convert('RGB')  # Open and convert image to RGB
+        
+        label = self.labels[idx]
+        
+        if self.transform:
+            image = self.transform(image)
+        
+        return image, label
+    
+class CustomPatchDataset(Dataset):
+    def __init__(self, root_dir, transform=None):
+        """
+        Args:
+            root_dir (str): Directory with all the images organized in subdirectories by class.
+            transform (callable, optional): Optional transform to be applied on a sample.
+        """
+        self.root_dir = root_dir
+        self.transform = transform
+        
+        # Create a list of (image_path, label) tuples
+        self.image_paths = []
+        self.labels = []
+        
+        # Loop through each class subdirectory
+        for label, class_name in enumerate(os.listdir(root_dir)):
+            class_dir = os.path.join(root_dir, class_name)
+            if os.path.isdir(class_dir):
+                for img_name in os.listdir(class_dir):
+                    img_path = os.path.join(class_dir, img_name)
+                    self.image_paths.append(img_path)
+                    self.labels.append(label)
+    
+    def __len__(self):
+        return len(self.image_paths)
+    
+    def __getitem__(self, idx):
+        fixed_width = 28*30
+        fixed_height = 28*40
+        img_path = self.image_paths[idx]
+        image = Image.open(img_path)
+        image = image.resize((fixed_width, fixed_height))
+        # Define patch size
+        patch_size = 28
+        # Iterate and slice the image
+        width, height = image.size
+        patches = []
+        for j in range(0, height, patch_size):
+            for i in range(0, width, patch_size):
+                box = (i, j, i + patch_size, j + patch_size)
+                patch = image.crop(box)
+                if self.transform:
+                  patch = self.transform(patch)
+                patches.append(patch)
+        bag = torch.stack(patches)
+        label = self.labels[idx]
+        
+        return bag, label
 class MyDataset(Dataset):
     def __init__(self, dataset, transform=None):
         self.data = dataset
@@ -107,10 +193,12 @@ def data_transformation():
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
-            transforms.ToTensor()
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5])
         ]),
         'val': transforms.Compose([
-            transforms.ToTensor()
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5])
         ]),
     }
     print("=========not imgnet")
@@ -178,9 +266,9 @@ def Load_patchdata(trainset, testset, batch_size=1):
     test_dataset = PatchDataset(testset, transform=data_transforms['val'])
 
     # Create DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     return train_loader, valid_loader, test_loader
 
 def Load_subset(trainset, testset):
@@ -303,23 +391,27 @@ def train_model(model, loss_module, optimizer, scheduler, train_loader, valid_lo
 
     return training_losses, validation_losses, training_acc, validation_acc
 
-def train(model, train_loader, optimizer, num_epoch):
+def train(model, train_loader, valid_loader, optimizer, num_epoch):
     model.train()
     for epoch in range(1, num_epoch):
         train_loss = 0.
         train_error = 0.
-        for batch_idx, (data, label) in enumerate(train_loader):
-            bag_label = label[0]
-            data, bag_label = data.cuda(), bag_label.cuda()
+        correct = 0
+        total = 0
+        for batch_idx, (bag, bag_label) in enumerate(train_loader):
+            bag, bag_label = bag.cuda(), bag_label.cuda()
             #data, bag_label = Variable(data), Variable(bag_label)
 
             # reset gradients
             optimizer.zero_grad()
             # calculate loss and metrics
-            loss, _ = model.calculate_objective(data, bag_label)
+            loss, _ = model.calculate_objective(bag, bag_label)
             train_loss += loss.item()
-            error, _ = model.calculate_classification_error(data, bag_label)
+            error, Y_hat = model.calculate_classification_error(bag, bag_label)
             train_error += error
+            # Count correct predictions
+            correct += Y_hat.eq(bag_label).sum().item()
+            total += bag_label.size(0)
             # backward pass
             loss.backward()
             # step
@@ -328,9 +420,32 @@ def train(model, train_loader, optimizer, num_epoch):
         # calculate loss and error for epoch
         train_loss /= len(train_loader)
         train_error /= len(train_loader)
+        train_acc = 100. * correct / total
+        # Validation
+        model.eval()
+        total = 0
+        correct = 0
+        valid_loss = 0.
+        valid_error = 0.
+        with torch.no_grad():
 
-        print(f"bag_label: {bag_label}")
-        print('Epoch: {}, Loss: {:.4f}, Train error: {:.4f}'.format(epoch, train_loss.item(), train_error))
+            for batch_idx, (bag, bag_label) in enumerate(valid_loader):
+                bag, bag_label = bag.cuda(), bag_label.cuda()
+
+                # calculate loss and metrics
+                loss, _ = model.calculate_objective(bag, bag_label)
+                valid_loss += loss.item()
+                error, Y_hat = model.calculate_classification_error(bag, bag_label)
+                valid_error += error
+                # Count correct predictions
+                correct += Y_hat.eq(bag_label).sum().item()
+                total += bag_label.size(0)
+
+        # calculate loss and error for epoch
+        valid_loss /= len(valid_loader)
+        valid_error /= len(valid_loader)
+        valid_acc = 100. * correct / total
+        print(f'Epoch {epoch}/{num_epoch}, Train Loss: {train_loss:.4f},  Valid Loss: {valid_loss:.4f}, Train acc: {train_acc:.4f}, Valid acc: {valid_acc:.4f}')
 
 def train_and_save_metrics(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, path='model', epochs=20):
 

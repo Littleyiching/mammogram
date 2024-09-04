@@ -36,6 +36,8 @@ class Attention(nn.Module):
         )
     def forward(self, x):
         x = x.squeeze(0)
+        batch_size, num_patches, channels, height, width = x.size()
+        x = x.view(-1, channels, height, width)  # Merge batch and patches
         H = self.feature_extractor_part1(x)
         H = H.view(-1, 50*4*4)
         H = self.feature_extractor_part2(H)  # KxM

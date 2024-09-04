@@ -12,6 +12,36 @@ from dataprocess import local_directory, save_metrics
 
 dir_path="{}/..".format(local_directory)
 pth_path="{}/../pth".format(local_directory)
+class PatchDataset(Dataset):
+    def __init__(self, dataset, transform=None):
+        self.data = dataset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data.label)
+
+    def __getitem__(self, index):
+        fixed_width = 28*30
+        fixed_height = 28*40
+        data_dir = dir_path
+        image_path = data_dir + os.sep + self.data.image_path[index]
+        image = Image.open(image_path)
+        image = image.resize((fixed_width, fixed_height))
+        # Define patch size
+        patch_size = 28
+        # Iterate and slice the image
+        width, height = image.size
+        patches = []
+        for j in range(0, height, patch_size):
+            for i in range(0, width, patch_size):
+                box = (i, j, i + patch_size, j + patch_size)
+                patch = image.crop(box)
+                if self.transform:
+                  patch = self.transform(patch)
+                patches.append(patch)
+        bag = torch.stack(patches)
+        label = self.data.label[index]
+        return bag, label
 class MyDataset(Dataset):
     def __init__(self, dataset, transform=None):
         self.data = dataset
@@ -74,17 +104,12 @@ def data_transformation_padding():
     return data_transforms
 
 def data_transformation():
-    target_size = (224, 224)
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
-            transforms.Resize(target_size),  # Resize images to target size
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=180),
             transforms.ToTensor()
         ]),
         'val': transforms.Compose([
-            transforms.Resize(target_size),
             transforms.ToTensor()
         ]),
     }
@@ -115,16 +140,16 @@ def data_augmentation():
     print("=========Apply autmix, rotate, flip")
     return data_transforms
 
-def split_data(trainset, test_size=0.2):
+def split_data(trainset):
     # Split the dataset into training and validation sets
-    trainset, validset = train_test_split(trainset, test_size=test_size)
+    trainset, validset = train_test_split(trainset, test_size=0.2)
     trainset=trainset.reset_index()
     validset=validset.reset_index()
     return trainset, validset
 
-def Load_data(trainset, testset, test_size=0.2, m='imgnet'):
+def Load_data(trainset, testset, m='imgnet'):
     batch_size=32
-    trainset, validset = split_data(trainset, test_size=test_size)
+    trainset, validset = split_data(trainset)
     
     if m == 'imgnet':
         data_transforms = data_transformation_imgnet()
@@ -136,6 +161,21 @@ def Load_data(trainset, testset, test_size=0.2, m='imgnet'):
     train_dataset = MyDataset(trainset, transform=data_transforms['train'])
     valid_dataset = MyDataset(validset, transform=data_transforms['val'])
     test_dataset = MyDataset(testset, transform=data_transforms['val'])
+
+    # Create DataLoaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    return train_loader, valid_loader, test_loader
+
+def Load_patchdata(trainset, testset, batch_size=1):
+    trainset, validset = split_data(trainset)
+    
+    data_transforms = data_transformation()
+
+    train_dataset = PatchDataset(trainset, transform=data_transforms['train'])
+    valid_dataset = PatchDataset(validset, transform=data_transforms['val'])
+    test_dataset = PatchDataset(testset, transform=data_transforms['val'])
 
     # Create DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
@@ -262,6 +302,35 @@ def train_model(model, loss_module, optimizer, scheduler, train_loader, valid_lo
     torch.save(model.state_dict(), f'{pth_path}/{path}_epoch_{epoch + 1}.pth')
 
     return training_losses, validation_losses, training_acc, validation_acc
+
+def train(model, train_loader, optimizer, num_epoch):
+    model.train()
+    for epoch in range(1, num_epoch):
+        train_loss = 0.
+        train_error = 0.
+        for batch_idx, (data, label) in enumerate(train_loader):
+            bag_label = label[0]
+            data, bag_label = data.cuda(), bag_label.cuda()
+            #data, bag_label = Variable(data), Variable(bag_label)
+
+            # reset gradients
+            optimizer.zero_grad()
+            # calculate loss and metrics
+            loss, _ = model.calculate_objective(data, bag_label)
+            train_loss += loss.item()
+            error, _ = model.calculate_classification_error(data, bag_label)
+            train_error += error
+            # backward pass
+            loss.backward()
+            # step
+            optimizer.step()
+
+        # calculate loss and error for epoch
+        train_loss /= len(train_loader)
+        train_error /= len(train_loader)
+
+        print(f"bag_label: {bag_label}")
+        print('Epoch: {}, Loss: {:.4f}, Train error: {:.4f}'.format(epoch, train_loss.item(), train_error))
 
 def train_and_save_metrics(model, loss_module, optimizer, scheduler, train_loader, valid_loader, device, path='model', epochs=20):
 

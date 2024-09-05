@@ -392,19 +392,16 @@ def train_model(model, loss_module, optimizer, scheduler, train_loader, valid_lo
     return training_losses, validation_losses, training_acc, validation_acc
 
 def train(model, train_loader, valid_loader, optimizer, num_epoch):
-    model.train()
+    accumulation_steps = 16
     for epoch in range(1, num_epoch):
+        model.train()
         train_loss = 0.
         train_error = 0.
         correct = 0
         total = 0
+
         for batch_idx, (bag, bag_label) in enumerate(train_loader):
             bag, bag_label = bag.cuda(), bag_label.cuda()
-            #data, bag_label = Variable(data), Variable(bag_label)
-
-            # reset gradients
-            optimizer.zero_grad()
-            # calculate loss and metrics
             loss, _ = model.calculate_objective(bag, bag_label)
             train_loss += loss.item()
             error, Y_hat = model.calculate_classification_error(bag, bag_label)
@@ -412,10 +409,12 @@ def train(model, train_loader, valid_loader, optimizer, num_epoch):
             # Count correct predictions
             correct += Y_hat.eq(bag_label).sum().item()
             total += bag_label.size(0)
-            # backward pass
             loss.backward()
-            # step
-            optimizer.step()
+            if (batch_idx + 1) % accumulation_steps == 0:
+                # step
+                optimizer.step()
+                # reset gradients
+                optimizer.zero_grad()
 
         # calculate loss and error for epoch
         train_loss /= len(train_loader)

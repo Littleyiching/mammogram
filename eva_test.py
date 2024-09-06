@@ -1,6 +1,6 @@
 
-from dataprocess import Import_CropImg, device
-from DLprocessing import Load_data, test_model
+from dataprocess import Import_CropImg, device, local_directory
+from DLprocessing import Load_data, test_model, plot_roc_curve
 import os
 from torchvision import models
 from torch import nn
@@ -12,17 +12,18 @@ current_file_name = os.path.basename(__file__)
 # Split the file name and extension
 current_file_name, _ = os.path.splitext(current_file_name)
 trainset, testset = Import_CropImg()
-_, _, test_loader = Load_data(trainset, testset, aug='imgnet')
+_, _, test_loader = Load_data(trainset, testset)
+dir_path="{}/../pth".format(local_directory)
 
-method = ["convnext_t_best.pth", "convnext_t_epoch_100.pth"]
+method = ["convt_none_2_best.pth", "convt_none_3_best.pth", "convt_none_4_best.pth", "vgg_best.pth"]
 
 #method = ["transformer_models-convnext_s_best.pth"]
 for i, path in enumerate(method):
-    if re.search("convnext", path) != None:
+    if re.search("conv", path) != None:
         if re.search("convnext_s", path)!=None:
-            print("convsmall")
             model=models.convnext_small()
-        elif re.search("convnext_t", path)!=None:
+        elif re.search("convt", path)!=None:
+            print("convnext_t")
             model=models.convnext_tiny()
         elif re.search("convnext_b", path)!=None:
             model=models.convnext_base()
@@ -58,6 +59,6 @@ for i, path in enumerate(method):
         model.fc = nn.Linear(num_ftrs, 2)
 #    model.cuda()
     model.to(device)
-    true_labels, predicted_probabilities = test_model(model, test_loader, f"/xtra/ho000199/temp/{path}", path, device)
-    #true_labels, predicted_probabilities = test_model(model, test_loader, path, path, device)
+    true_labels, predicted_probabilities = test_model(model, test_loader, f"{dir_path}/{path}", path, device)
+    plot_roc_curve(true_labels, predicted_probabilities, {path})
 

@@ -35,7 +35,7 @@ dir_path="{}/../pth".format(local_directory)
 
 loss_module=nn.CrossEntropyLoss()
 method = ["clahe", "none"]
-for i in range(3):
+for i in range(5):
     model = DinoVisionTransformerClassifier("base")
     model = model.to(device)
     print(model)

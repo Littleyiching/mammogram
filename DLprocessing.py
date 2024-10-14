@@ -11,7 +11,7 @@ from dinov2_model import ResizeAndPad
 from dataprocess import local_directory, save_metrics
 
 dir_path="{}/..".format(local_directory)
-pth_path="{}/../pth".format(local_directory)
+pth_path="{}/../pth/combine".format(local_directory)
 class PatchDataset(Dataset):
     def __init__(self, dataset, transform=None):
         self.data = dataset
@@ -21,23 +21,34 @@ class PatchDataset(Dataset):
         return len(self.data.label)
 
     def __getitem__(self, index):
-        fixed_width = 28*30
-        fixed_height = 28*40
+        fixed_width = 64*6
+        fixed_height = 64*8
         data_dir = dir_path
         image_path = data_dir + os.sep + self.data.image_path[index]
         image = Image.open(image_path)
         image = image.resize((fixed_width, fixed_height))
         # Define patch size
-        patch_size = 28
+        patch_size = 64
+        stride = patch_size // 2  # 50% overlap
         # Iterate and slice the image
         width, height = image.size
         patches = []
+        '''
         for j in range(0, height, patch_size):
             for i in range(0, width, patch_size):
                 box = (i, j, i + patch_size, j + patch_size)
                 patch = image.crop(box)
                 if self.transform:
                   patch = self.transform(patch)
+                patches.append(patch)
+        '''
+        # Extract patches with overlap
+        for j in range(0, height - patch_size + 1, stride):
+            for i in range(0, width - patch_size + 1, stride):
+                box = (i, j, i + patch_size, j + patch_size)
+                patch = image.crop(box)
+                if self.transform:
+                    patch = self.transform(patch)
                 patches.append(patch)
         bag = torch.stack(patches)
         label = self.data.label[index]
@@ -146,7 +157,7 @@ class MyDataset(Dataset):
         return image, label
 
 def data_transformation_imgnet():
-    target_size = (224, 224)
+    target_size = (299, 299)
     # Define data transformations
     data_transforms = {
         'train': transforms.Compose([
@@ -194,11 +205,11 @@ def data_transformation():
     data_transforms = {
         'train': transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5])
+            transforms.Normalize(mean=[0.2], std=[0.25])
         ]),
         'val': transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5])
+            transforms.Normalize(mean=[0.2], std=[0.25])
         ]),
     }
     print("=========not imgnet")
@@ -637,20 +648,21 @@ def test_model(model, test_loader, path, name, device):
 
     return true_labels, predicted_probabilities
 
-def plot_roc_curve(labels, probs, name):
-
-    # Compute and plot the ROC curve and specify the AUC value in the legend (or within the plot somewhere).
-    fpr, tpr, thresholds = roc_curve(labels, probs)
-    roc_auc = auc(fpr, tpr)
+def plot_roc_curve(labels, probs, method, name):
 
     plt.figure(figsize=(8, 6))
-    plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC Curve (AUC = {roc_auc:.2f})')
+    for i in range(len(method)):
+        # Compute and plot the ROC curve and specify the AUC value in the legend (or within the plot somewhere).
+        fpr, tpr, thresholds = roc_curve(labels[i], probs[i])
+        roc_auc = auc(fpr, tpr)
+        plt.plot(fpr, tpr, lw=2, label=f'{method[i]} (AUC = {roc_auc:.2f})')
+    #plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC Curve (AUC = {roc_auc:.2f})')
     plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic (ROC) Curve')
     plt.legend(loc='lower right')
-    plt.savefig(f'{name}-roc.png')
+    plt.savefig(f'{pth_path}/{name}-roc.png')
 
 def load(save_path, model):
     pretraind_dict = torch.load(save_path)

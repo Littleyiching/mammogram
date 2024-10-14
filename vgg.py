@@ -23,20 +23,22 @@ class VGG_simple(nn.Module):
 
         self.features = features
 
-        self.avgpool = nn.AdaptiveAvgPool2d(7)
-        self.avgpool2 = nn.AdaptiveAvgPool2d(1)
+        #self.avgpool = nn.AdaptiveAvgPool2d(7)
+        #self.avgpool2 = nn.AdaptiveAvgPool2d(1)
 
         self.classifier = nn.Sequential(
-            nn.Linear(512 * 1 * 1, feature_size),
+            nn.Linear(512 * 8 * 8, 16),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.5),
+            #nn.Dropout(0.5),
+            nn.Linear(16, feature_size),
+            nn.ReLU(inplace=True),
             nn.Linear(feature_size, output_dim),
         )
 
     def forward(self, x):
         x = self.features(x)
-        x = self.avgpool(x)
-        x = self.avgpool2(x)
+        #x = self.avgpool(x)
+        #x = self.avgpool2(x)
         h = x.view(x.shape[0], -1)
         x = self.classifier(h)
         return x

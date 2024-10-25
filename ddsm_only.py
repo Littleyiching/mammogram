@@ -30,7 +30,7 @@ train_loader = torch.utils.data.DataLoader(DDSM_train, batch_size=batch_size, sh
 valid_loader = torch.utils.data.DataLoader(DDSM_valid, batch_size=batch_size, shuffle=False, num_workers=4)
 test_loader = torch.utils.data.DataLoader(DDSM_test, batch_size=batch_size, shuffle=False, num_workers=2)
 
-method = ['densenet201', 'densenet161', 'convnext_s', 'convnext_b', 'efficientv2_m', 'wide_resnet101']
+method = ['efficientv2_m', 'wide_resnet101']
 '''
 resnet50 = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
 effv2 = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
@@ -41,13 +41,15 @@ shuffle = models.shufflenet_v2_x1_0(weights=models.ShuffleNet_V2_X1_0_Weights.DE
 incepv3 = models.inception_v3(weights=models.Inception_V3_Weights.DEFAULT)
 dense121 = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
 '''
+'''
 dense201 = models.densenet201(weights=models.DenseNet201_Weights.DEFAULT)
 dense161 = models.densenet161(weights=models.DenseNet161_Weights.DEFAULT)
 convs = models.convnext_small(weights=models.ConvNeXt_Small_Weights.DEFAULT)
 convb = models.convnext_base(weights=models.ConvNeXt_Base_Weights.DEFAULT)
+'''
 effv2 = models.efficientnet_v2_m(weights=models.EfficientNet_V2_M_Weights.DEFAULT)
 wideres101 = models.wide_resnet101_2(weights=models.Wide_ResNet101_2_Weights.DEFAULT)
-model_list = [dense201, dense161, convs, convb, effv2, wideres101]
+model_list = [effv2, wideres101]
 num_classes=2
 loss_module = nn.CrossEntropyLoss()
 assert len(method) == len(model_list)
@@ -69,7 +71,7 @@ for i, model in enumerate(model_list):
     elif re.search("dense", method[i])!=None:
         num_ftrs = model.classifier.in_features
         model.classifier = nn.Linear(num_ftrs, num_classes)
-    elif method[i] == 'efficientv2' or method[i] == 'mnas_05':
+    elif re.search("efficientv2", method[i])!=None or method[i] == 'mnas_05':
         num_ftrs = model.classifier[1].in_features
         model.classifier[1] = nn.Linear(num_ftrs, num_classes)
     elif re.search("convnext", method[i])!=None:

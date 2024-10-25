@@ -13,6 +13,7 @@ from torchvision import models
 import torch
 import re
 from dinov2_model import DinoVisionTransformerClassifier
+
 # Get the current file name
 current_file_name = os.path.basename(__file__)
 # Split the file name and extension
@@ -26,18 +27,15 @@ DDSM_valid = MyDataset(validset, transform=data_transforms['val'])
 DDSM_test = MyDataset(testset, transform=data_transforms['val'])
 
 # Create data loaders, use a batch size of '64', set shuffle to 'False' and workers to '0'
-batch_size = 64
+batch_size = 32
 train_loader = torch.utils.data.DataLoader(DDSM_train, batch_size=batch_size, shuffle=True, num_workers=4)
 valid_loader = torch.utils.data.DataLoader(DDSM_valid, batch_size=batch_size, shuffle=False, num_workers=4)
 test_loader = torch.utils.data.DataLoader(DDSM_test, batch_size=batch_size, shuffle=False, num_workers=2)
 
-method = ['swin_t', 'swin_b', 'dino_l', 'dino_s']
-swin_t = models.swin_v2_t(weights=models.Swin_V2_T_Weights.DEFAULT)
-swin_b = models.swin_v2_b(weights=models.Swin_V2_B_Weights.DEFAULT)
-dino_l = DinoVisionTransformerClassifier("large")
-dino_s = DinoVisionTransformerClassifier("small")
+method = ['dino_g']
+dino_g = DinoVisionTransformerClassifier("giant")
 
-model_list = [swin_t, swin_b, dino_l, dino_s]
+model_list = [dino_g]
 num_classes=2
 loss_module = nn.CrossEntropyLoss()
 assert len(method) == len(model_list)
@@ -94,5 +92,5 @@ for i, model in enumerate(model_list):
     true_label_list.append(true_labels)
     predict_prob_list.append(predicted_probabilities)
 
-plot_roc_curve(true_label_list, predict_prob_list, method, f"{current_file_name}-2")
+plot_roc_curve(true_label_list, predict_prob_list, method, f"{current_file_name}-dino_g")
 
